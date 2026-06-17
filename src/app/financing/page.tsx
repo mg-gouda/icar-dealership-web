@@ -61,7 +61,7 @@ function FinancingForm() {
     setSubmitting(true);
     setError('');
     try {
-      await apiFetch('/leads', {
+      await apiFetch('/public/leads', {
         method: 'POST',
         body: JSON.stringify({
           name: form.name,

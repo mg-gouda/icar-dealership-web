@@ -48,7 +48,7 @@ function AppointmentForm() {
     setError('');
     try {
       // Create a lead first, then log appointment as activity
-      const lead = await apiFetch<{ id: string }>('/leads', {
+      const lead = await apiFetch<{ id: string }>('/public/leads', {
         method: 'POST',
         body: JSON.stringify({
           name: form.name,
