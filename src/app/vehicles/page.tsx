@@ -51,7 +51,7 @@ export default function VehiclesPage() {
       ...(minPrice && { minPrice }),
       ...(maxPrice && { maxPrice }),
     });
-    apiFetch<{ data: Vehicle[] }>(`/vehicles?${qs}`)
+    apiFetch<{ data: Vehicle[] }>(`/public/vehicles?${qs}`)
       .then((res) => { setVehicles(res.data ?? []); setError(''); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));

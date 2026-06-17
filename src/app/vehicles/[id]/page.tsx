@@ -29,7 +29,7 @@ export default function VehicleDetailPage() {
   const [activeImg, setActiveImg] = useState(0);
 
   useEffect(() => {
-    apiFetch<Vehicle>(`/vehicles/${id}`)
+    apiFetch<Vehicle>(`/public/vehicles/${id}`)
       .then((v) => { setVehicle(v); setLoading(false); })
       .catch((e) => { setError(e.message); setLoading(false); });
   }, [id]);
