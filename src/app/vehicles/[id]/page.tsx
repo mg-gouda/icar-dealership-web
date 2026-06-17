@@ -8,9 +8,9 @@ import { apiFetch } from '../../../lib/api';
 
 interface Vehicle {
   id: string; make: string; model: string; year: number; condition: string;
-  bodyType: string; color?: string; listPrice: number; costPrice?: number;
+  bodyType: string; color?: string; price: number; cost?: number;
   mileage?: number; fuelType?: string; transmission?: string; engineSize?: string;
-  doors?: number; seats?: number; vin?: string; stockNumber: string;
+  doors?: number; seats?: number; vin: string;
   description?: string; status: string;
   features?: { name: string; category?: string }[];
   images?: { url: string; isPrimary: boolean; caption?: string }[];
@@ -65,7 +65,7 @@ export default function VehicleDetailPage() {
     { label: 'Mileage', value: vehicle.mileage ? `${vehicle.mileage.toLocaleString()} km` : undefined },
     { label: 'Doors', value: vehicle.doors },
     { label: 'Seats', value: vehicle.seats },
-    { label: 'Stock #', value: vehicle.stockNumber },
+    { label: 'Stock #', value: vehicle.vin },
   ].filter((s) => s.value !== undefined && s.value !== null);
 
   return (
@@ -153,12 +153,12 @@ export default function VehicleDetailPage() {
                 {[vehicle.bodyType, vehicle.color, vehicle.transmission].filter(Boolean).join(' · ')}
               </p>
 
-              <p className="text-3xl font-bold text-blue-400 mb-1">{fmt(vehicle.listPrice)}</p>
+              <p className="text-3xl font-bold text-blue-400 mb-1">{fmt(vehicle.price)}</p>
               <p className="text-gray-600 text-xs mb-5">Prices are indicative and subject to final confirmation</p>
 
               {vehicle.status === 'AVAILABLE' ? (
                 <div className="space-y-3">
-                  <Link href={`/financing?vehicleId=${vehicle.id}&price=${vehicle.listPrice}`}
+                  <Link href={`/financing?vehicleId=${vehicle.id}&price=${vehicle.price}`}
                     className="block w-full text-center py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl transition">
                     Inquire About Financing
                   </Link>

@@ -8,7 +8,7 @@ import { apiFetch } from '../../lib/api';
 
 interface Vehicle {
   id: string; make: string; model: string; year: number; condition: string;
-  bodyType: string; color?: string; listPrice: number; mileage?: number;
+  bodyType: string; color?: string; price: number; mileage?: number;
   fuelType?: string; transmission?: string; status: string;
   images?: { url: string; isPrimary: boolean }[];
   location?: { name: string; city?: string };
@@ -58,8 +58,8 @@ export default function VehiclesPage() {
   }, [search, make, bodyType, condition, minPrice, maxPrice]);
 
   const sorted = [...vehicles].sort((a, b) => {
-    if (sort === 'price_asc') return a.listPrice - b.listPrice;
-    if (sort === 'price_desc') return b.listPrice - a.listPrice;
+    if (sort === 'price_asc') return a.price - b.price;
+    if (sort === 'price_desc') return b.price - a.price;
     if (sort === 'year_asc') return a.year - b.year;
     return b.year - a.year;
   });
@@ -145,7 +145,7 @@ export default function VehiclesPage() {
                         .filter(Boolean).join(' · ')}
                     </p>
                     <div className="mt-3 flex items-center justify-between">
-                      <p className="text-blue-400 font-bold">{fmt(v.listPrice)}</p>
+                      <p className="text-blue-400 font-bold">{fmt(v.price)}</p>
                       <p className="text-gray-600 text-xs">{v.location?.city ?? v.location?.name ?? ''}</p>
                     </div>
                   </div>
