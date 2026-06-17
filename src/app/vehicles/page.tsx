@@ -51,8 +51,8 @@ export default function VehiclesPage() {
       ...(minPrice && { minPrice }),
       ...(maxPrice && { maxPrice }),
     });
-    apiFetch<Vehicle[]>(`/vehicles?${qs}`)
-      .then((d) => { setVehicles(d); setError(''); })
+    apiFetch<{ data: Vehicle[] }>(`/vehicles?${qs}`)
+      .then((res) => { setVehicles(res.data ?? []); setError(''); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [search, make, bodyType, condition, minPrice, maxPrice]);
