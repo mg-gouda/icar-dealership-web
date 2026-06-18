@@ -10,7 +10,7 @@ interface Vehicle {
   id: string; make: string; model: string; year: number; condition: string;
   bodyType: string; color?: string; price: number; mileage?: number;
   fuelType?: string; transmission?: string; status: string;
-  images?: { url: string; isPrimary: boolean }[];
+  images?: { url: string }[];
   location?: { name: string; city?: string };
 }
 
@@ -114,7 +114,7 @@ export default function VehiclesPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {sorted.map((v) => {
-              const img = v.images?.find((i) => i.isPrimary)?.url ?? v.images?.[0]?.url;
+              const img = v.images?.[0]?.url;
               return (
                 <Link key={v.id} href={`/vehicles/${v.id}`}
                   className="group rounded-2xl bg-gray-900 border border-white/5 hover:border-white/20 overflow-hidden transition">

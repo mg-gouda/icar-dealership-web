@@ -12,8 +12,8 @@ interface Vehicle {
   mileage?: number; fuelType?: string; transmission?: string; engineSize?: string;
   doors?: number; seats?: number; vin: string;
   description?: string; status: string;
-  features?: { name: string; category?: string }[];
-  images?: { url: string; isPrimary: boolean; caption?: string }[];
+  features?: { feature: string; category?: string }[];
+  images?: { url: string }[];
   location?: { name: string; city?: string; phone?: string };
 }
 
@@ -52,7 +52,7 @@ export default function VehicleDetailPage() {
   );
 
   const images = vehicle.images ?? [];
-  const sortedImages = [...images].sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0));
+  const sortedImages = images; // API returns pre-sorted by order asc
 
   const specs = [
     { label: 'Year', value: vehicle.year },
@@ -126,8 +126,8 @@ export default function VehicleDetailPage() {
                 <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Features</h2>
                 <div className="flex flex-wrap gap-2">
                   {vehicle.features!.map((f) => (
-                    <span key={f.name} className="px-3 py-1 bg-gray-800 text-gray-300 text-xs rounded-full border border-white/5">
-                      {f.name}
+                    <span key={f.feature} className="px-3 py-1 bg-gray-800 text-gray-300 text-xs rounded-full border border-white/5">
+                      {f.feature}
                     </span>
                   ))}
                 </div>
