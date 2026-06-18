@@ -6,10 +6,13 @@ export default function Header() {
       <Link href="/" className="text-lg font-bold text-white tracking-tight">
         iCar <span className="text-blue-400">Egypt</span>
       </Link>
-      <nav className="flex gap-6 text-sm text-gray-400">
+      <nav className="flex flex-wrap gap-4 sm:gap-6 text-sm text-gray-400">
         <Link href="/vehicles" className="hover:text-white transition">Browse Cars</Link>
+        <Link href="/vehicles/saved" className="hover:text-white transition">Saved</Link>
         <Link href="/financing" className="hover:text-white transition">Financing</Link>
         <Link href="/appointments" className="hover:text-white transition">Test Drive</Link>
+        <Link href="/locations" className="hover:text-white transition">Locations</Link>
+        <Link href="/account" className="hover:text-white transition">Account</Link>
       </nav>
     </header>
   );

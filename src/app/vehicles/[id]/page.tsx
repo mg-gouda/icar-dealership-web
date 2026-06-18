@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Header from '../../../components/Header';
 import { apiFetch } from '../../../lib/api';
+import { toggleSaved, isSaved } from '../saved/page';
 
 interface Vehicle {
   id: string; make: string; model: string; year: number; condition: string;
@@ -27,12 +28,19 @@ export default function VehicleDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeImg, setActiveImg] = useState(0);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
+    setSaved(isSaved(id));
     apiFetch<Vehicle>(`/public/vehicles/${id}`)
       .then((v) => { setVehicle(v); setLoading(false); })
-      .catch((e) => { setError(e.message); setLoading(false); });
+      .catch((e: unknown) => { setError(e instanceof Error ? e.message : 'Failed to load'); setLoading(false); });
   }, [id]);
+
+  function handleToggleSaved() {
+    const nowSaved = toggleSaved(id);
+    setSaved(nowSaved);
+  }
 
   if (loading) return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -52,7 +60,7 @@ export default function VehicleDetailPage() {
   );
 
   const images = vehicle.images ?? [];
-  const sortedImages = images; // API returns pre-sorted by order asc
+  const sortedImages = images;
 
   const specs = [
     { label: 'Year', value: vehicle.year },
@@ -73,9 +81,22 @@ export default function VehicleDetailPage() {
       <Header />
 
       <div className="max-w-6xl mx-auto px-4 py-8">
-        <button onClick={() => router.back()} className="text-gray-500 hover:text-white text-sm mb-5 transition">
-          ← Back to inventory
-        </button>
+        <div className="flex items-center justify-between mb-5">
+          <button onClick={() => router.back()} className="text-gray-500 hover:text-white text-sm transition">
+            ← Back to inventory
+          </button>
+          <button
+            onClick={handleToggleSaved}
+            title={saved ? 'Remove from saved' : 'Save vehicle'}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition ${
+              saved
+                ? 'border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20'
+                : 'border-white/10 text-gray-400 hover:text-white hover:border-white/30'
+            }`}>
+            <span className="text-base">{saved ? '♥' : '♡'}</span>
+            {saved ? 'Saved' : 'Save'}
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
           {/* Left: Images */}
