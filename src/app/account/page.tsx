@@ -83,9 +83,28 @@ const STATUS_COLORS: Record<string, string> = {
   APPROVED: 'text-blue-400', FINALIZED: 'text-green-400', CANCELLED: 'text-red-400',
 };
 
+interface InstallmentLine { dueDate: string; status: string; totalDue: number; paidAmount: number; }
+interface Deal {
+  id: string; status: string; purchaseMethod: string; createdAt: string;
+  vehicle?: { make: string; model: string; year: number };
+  location?: { name: string; phone: string };
+  financeApplication?: {
+    id: string; status: string;
+    bankApproval?: { approvedAmount: number; approvalDate: string; approvalReferenceNumber: string };
+  };
+  installmentPlan?: {
+    id: string; principalAmount: number; downPayment: number; durationMonths: number;
+    interestRate: number; startDate: string; status: string;
+    installments: InstallmentLine[];
+  };
+}
+
+const fmt = (n: number) => n.toLocaleString('en-EG', { style: 'currency', currency: 'EGP', maximumFractionDigits: 0 });
+
 function DealStatusLookup() {
   const [email, setEmail] = useState('');
-  const [deals, setDeals] = useState<Array<{ id: string; status: string; purchaseMethod: string; createdAt: string; vehicle?: { make: string; model: string; year: number }; location?: { name: string; phone: string } }> | null>(null);
+  const [deals, setDeals] = useState<Deal[] | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function lookup(e: React.FormEvent) {
@@ -119,16 +138,73 @@ function DealStatusLookup() {
       {deals && deals.length > 0 && (
         <div className="space-y-3">
           {deals.map((d) => (
-            <div key={d.id} className="rounded-xl border border-white/5 bg-gray-800 p-4 flex items-center justify-between">
-              <div>
-                <p className="text-white text-sm font-medium">
-                  {d.vehicle ? `${d.vehicle.year} ${d.vehicle.make} ${d.vehicle.model}` : `Deal #${d.id.slice(-8)}`}
-                </p>
-                <p className="text-gray-500 text-xs mt-0.5">{d.location?.name} · {d.purchaseMethod.replace(/_/g, ' ')}</p>
-              </div>
-              <span className={`text-sm font-semibold ${STATUS_COLORS[d.status] ?? 'text-gray-400'}`}>
-                {d.status.replace(/_/g, ' ')}
-              </span>
+            <div key={d.id} className="rounded-xl border border-white/5 bg-gray-800 overflow-hidden">
+              <button className="w-full p-4 flex items-center justify-between text-left"
+                onClick={() => setExpanded(expanded === d.id ? null : d.id)}>
+                <div>
+                  <p className="text-white text-sm font-medium">
+                    {d.vehicle ? `${d.vehicle.year} ${d.vehicle.make} ${d.vehicle.model}` : `Deal #${d.id.slice(-8)}`}
+                  </p>
+                  <p className="text-gray-500 text-xs mt-0.5">{d.location?.name} · {d.purchaseMethod.replace(/_/g, ' ')}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-sm font-semibold ${STATUS_COLORS[d.status] ?? 'text-gray-400'}`}>
+                    {d.status.replace(/_/g, ' ')}
+                  </span>
+                  <span className="text-gray-600 text-xs">{expanded === d.id ? '▲' : '▼'}</span>
+                </div>
+              </button>
+
+              {expanded === d.id && (
+                <div className="border-t border-white/5 px-4 pb-4 space-y-3">
+                  {/* Finance Application */}
+                  {d.financeApplication && (
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Finance Application</p>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-400">Status</span>
+                        <span className={`font-medium ${d.financeApplication.status === 'APPROVED' ? 'text-green-400' : d.financeApplication.status === 'REJECTED' ? 'text-red-400' : 'text-amber-400'}`}>
+                          {d.financeApplication.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      {d.financeApplication.bankApproval && (
+                        <div className="mt-2 rounded-lg bg-green-500/5 border border-green-500/20 p-3">
+                          <p className="text-xs text-green-400 font-medium mb-1">Bank Approved</p>
+                          <p className="text-white text-sm">{fmt(Number(d.financeApplication.bankApproval.approvedAmount))}</p>
+                          <p className="text-xs text-gray-500">Ref: {d.financeApplication.bankApproval.approvalReferenceNumber}</p>
+                          <p className="text-xs text-gray-500">{new Date(d.financeApplication.bankApproval.approvalDate).toLocaleDateString('en-EG')}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Installment Plan */}
+                  {d.installmentPlan && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Installment Plan</p>
+                      <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                        <div><span className="text-gray-500">Principal</span> <span className="text-white ml-1">{fmt(Number(d.installmentPlan.principalAmount))}</span></div>
+                        <div><span className="text-gray-500">Rate</span> <span className="text-white ml-1">{Number(d.installmentPlan.interestRate)}% / yr</span></div>
+                        <div><span className="text-gray-500">Duration</span> <span className="text-white ml-1">{d.installmentPlan.durationMonths} months</span></div>
+                        <div><span className="text-gray-500">Status</span> <span className={`ml-1 ${d.installmentPlan.status === 'ACTIVE' ? 'text-blue-400' : 'text-gray-400'}`}>{d.installmentPlan.status}</span></div>
+                      </div>
+                      {d.installmentPlan.installments.length > 0 && (
+                        <div>
+                          <p className="text-xs text-gray-600 mb-1">Next installments:</p>
+                          {d.installmentPlan.installments.map((line, i) => (
+                            <div key={i} className="flex justify-between text-xs py-1 border-b border-white/5 last:border-0">
+                              <span className="text-gray-400">{new Date(line.dueDate).toLocaleDateString('en-EG')}</span>
+                              <span className={line.status === 'PAID' ? 'text-green-400' : line.status === 'OVERDUE' ? 'text-red-400' : 'text-white'}>
+                                {fmt(Number(line.totalDue))} · {line.status}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
