@@ -6,8 +6,8 @@ import Header from '../../../components/Header';
 import { apiFetch } from '../../../lib/api';
 
 interface Vehicle {
-  id: string; make: string; model: string; year: number; condition: string;
-  bodyType: string; color?: string; price: number; mileage?: number;
+  id: string; make: string; model: string; year: number; condition?: string;
+  bodyType?: string; color?: string; price: number; mileage?: number;
   fuelType?: string; status: string;
   images?: { url: string }[];
   location?: { name: string; city?: string };
@@ -35,30 +35,58 @@ export function isSaved(id: string): boolean {
   return getSavedIds().includes(id);
 }
 
+function getToken(): string | null {
+  if (typeof document === 'undefined') return null;
+  return document.cookie.split(';').find((c) => c.trim().startsWith('customer_session='))?.split('=')[1] ?? null;
+}
+
 export default function SavedPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  function load() {
+  async function loadFromApi(token: string) {
+    const favs = await apiFetch<{ vehicle: Vehicle }[]>('/public/favorites', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setVehicles(favs.map((f) => f.vehicle).filter(Boolean));
+  }
+
+  function loadFromStorage() {
     const ids = getSavedIds();
     if (ids.length === 0) { setVehicles([]); setLoading(false); return; }
-    setLoading(true);
     Promise.all(ids.map((id) => apiFetch<Vehicle>(`/public/vehicles/${id}`).catch(() => null)))
-      .then((results) => {
-        setVehicles(results.filter(Boolean) as Vehicle[]);
-        setLoading(false);
-      });
+      .then((results) => { setVehicles(results.filter(Boolean) as Vehicle[]); setLoading(false); });
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const token = getToken();
+    if (token) {
+      setIsLoggedIn(true);
+      loadFromApi(token).catch(() => loadFromStorage()).finally(() => setLoading(false));
+    } else {
+      loadFromStorage();
+    }
+  }, []);
 
-  function remove(id: string) {
-    toggleSaved(id);
-    setVehicles((prev) => prev.filter((v) => v.id !== id));
+  async function remove(id: string) {
+    const token = getToken();
+    if (token) {
+      await apiFetch(`/public/favorites/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+      setVehicles((prev) => prev.filter((v) => v.id !== id));
+    } else {
+      toggleSaved(id);
+      setVehicles((prev) => prev.filter((v) => v.id !== id));
+    }
   }
 
-  function clearAll() {
-    localStorage.setItem(STORAGE_KEY, '[]');
+  async function clearAll() {
+    const token = getToken();
+    if (token) {
+      await Promise.all(vehicles.map((v) => apiFetch(`/public/favorites/${v.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).catch(() => null)));
+    } else {
+      localStorage.setItem(STORAGE_KEY, '[]');
+    }
     setVehicles([]);
   }
 
@@ -72,6 +100,9 @@ export default function SavedPage() {
             <h1 className="text-2xl font-bold text-white">Saved Vehicles</h1>
             <p className="text-gray-500 text-sm mt-0.5">
               {loading ? '…' : `${vehicles.length} saved`}
+              {!isLoggedIn && !loading && (
+                <span className="ml-2 text-amber-400/70">· <Link href="/account" className="underline hover:text-amber-300">Sign in</Link> to sync across devices</span>
+              )}
             </p>
           </div>
           {vehicles.length > 0 && !loading && (
@@ -117,9 +148,6 @@ export default function SavedPage() {
                           </svg>
                         </div>
                       )}
-                      <span className="absolute top-2 left-2 text-xs font-medium bg-gray-950/80 text-gray-300 px-2 py-0.5 rounded-full">
-                        {v.condition}
-                      </span>
                     </div>
                     <div className="p-4">
                       <p className="text-white font-semibold group-hover:text-blue-300 transition">
