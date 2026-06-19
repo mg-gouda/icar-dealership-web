@@ -1,380 +1,673 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
-import { apiFetch } from '../../lib/api';
+import { useRouter } from 'next/navigation';
 import Header from '../../components/Header';
 
-const HOW_IT_WORKS = [
-  {
-    step: '1',
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
-    ),
-    title: 'Browse & Inquire',
-    desc: 'Find your vehicle and submit a financing inquiry or test drive request.',
-  },
-  {
-    step: '2',
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-    title: 'Financing Review',
-    desc: 'Our team reviews your application and prepares tailored financing options.',
-  },
-  {
-    step: '3',
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-      </svg>
-    ),
-    title: 'Drive Away',
-    desc: 'Sign the paperwork, complete payment, and pick up your keys.',
-  },
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4001/api/v1';
+const fmt = (n: number | string) => 'EGP ' + Number(n).toLocaleString('en-EG', { maximumFractionDigits: 0 });
+const fmtDate = (d: string | Date) => new Date(d).toLocaleDateString('en-EG', { year: 'numeric', month: 'short', day: 'numeric' });
+
+type Nav = 'deals' | 'finance' | 'installments' | 'profile' | 'favorites';
+
+const DOC_TYPES = [
+  { key: 'NATIONAL_ID_FRONT', label: 'National ID (Front)' },
+  { key: 'NATIONAL_ID_BACK', label: 'National ID (Back)' },
+  { key: 'PROOF_OF_INCOME', label: 'Proof of Income / Salary Certificate' },
+  { key: 'BANK_STATEMENT', label: 'Bank Statement (last 3 months)' },
+  { key: 'CAR_LICENSE_BAYAN', label: 'Car License / Bayan' },
 ];
 
-const CONTACTS = [
-  {
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-      </svg>
-    ),
-    label: 'Phone',
-    value: '+20 2 0000 0000',
-    href: 'tel:+20200000000',
-  },
-  {
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-      </svg>
-    ),
-    label: 'Email',
-    value: 'info@icaregypt.com',
-    href: 'mailto:info@icaregypt.com',
-  },
-  {
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-      </svg>
-    ),
-    label: 'WhatsApp',
-    value: '+20 10 0000 0000',
-    href: 'https://wa.me/201000000000',
-  },
+const FINANCING_STEPS = [
+  { key: 'DOCUMENTS_PENDING', label: 'Documents' },
+  { key: 'SUBMITTED', label: 'Submitted' },
+  { key: 'UNDER_REVIEW', label: 'Under Review' },
+  { key: 'APPROVED', label: 'Approved' },
 ];
 
 const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'text-gray-400', PENDING_FINANCE: 'text-amber-400',
-  APPROVED: 'text-blue-400', FINALIZED: 'text-green-400', CANCELLED: 'text-red-400',
+  DRAFT: 'var(--text-3)',
+  PENDING: 'var(--warning-fg)',
+  FINALIZED: 'var(--success-fg)',
+  CANCELLED: 'var(--danger-fg)',
+  ACTIVE: 'var(--success-fg)',
+  OVERDUE: 'var(--danger-fg)',
+  COMPLETED: 'var(--primary)',
+  PAID: 'var(--success-fg)',
 };
 
-interface InstallmentLine { dueDate: string; status: string; totalDue: number; paidAmount: number; }
-interface Deal {
-  id: string; status: string; purchaseMethod: string; createdAt: string;
-  vehicle?: { make: string; model: string; year: number };
-  location?: { name: string; phone: string };
-  financeApplication?: {
-    id: string; status: string;
-    bankApproval?: { approvedAmount: number; approvalDate: string; approvalReferenceNumber: string };
-  };
-  installmentPlan?: {
-    id: string; principalAmount: number; downPayment: number; durationMonths: number;
-    interestRate: number; startDate: string; status: string;
-    installments: InstallmentLine[];
-  };
+function authHeaders(): Record<string, string> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('b2c_token') : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-const fmt = (n: number) => n.toLocaleString('en-EG', { style: 'currency', currency: 'EGP', maximumFractionDigits: 0 });
+async function apiFetch(path: string, opts?: RequestInit) {
+  const res = await fetch(`${API}${path}`, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(opts?.headers as Record<string, string> ?? {}) },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
 
-function DealStatusLookup() {
-  const [email, setEmail] = useState('');
-  const [deals, setDeals] = useState<Deal[] | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+// ── Status badge ─────────────────────────────────────────────────────────────
 
-  async function lookup(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const res = await apiFetch<{ deals: typeof deals }>(`/public/deal-status?email=${encodeURIComponent(email)}`);
-      setDeals(res.deals);
-    } catch (e: unknown) {
-      setDeals([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
+function Badge({ label, color }: { label: string; color?: string }) {
   return (
-    <section className="rounded-2xl border border-white/5 bg-gray-900 p-6">
-      <h2 className="text-lg font-bold text-white mb-1">Check Deal Status</h2>
-      <p className="text-gray-500 text-sm mb-4">Enter your email to look up your deal progress.</p>
-      <form onSubmit={lookup} className="flex gap-2 mb-4">
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your@email.com" required
-          className="flex-1 px-3 py-2 bg-gray-800 border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500" />
-        <button type="submit" disabled={loading || !email}
-          className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition">
-          {loading ? '…' : 'Look Up'}
-        </button>
-      </form>
-      {deals !== null && deals.length === 0 && (
-        <p className="text-gray-500 text-sm">No deals found for this email. Contact us if you need help.</p>
-      )}
-      {deals && deals.length > 0 && (
-        <div className="space-y-3">
-          {deals.map((d) => (
-            <div key={d.id} className="rounded-xl border border-white/5 bg-gray-800 overflow-hidden">
-              <button className="w-full p-4 flex items-center justify-between text-left"
-                onClick={() => setExpanded(expanded === d.id ? null : d.id)}>
-                <div>
-                  <p className="text-white text-sm font-medium">
-                    {d.vehicle ? `${d.vehicle.year} ${d.vehicle.make} ${d.vehicle.model}` : `Deal #${d.id.slice(-8)}`}
-                  </p>
-                  <p className="text-gray-500 text-xs mt-0.5">{d.location?.name} · {d.purchaseMethod.replace(/_/g, ' ')}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={`text-sm font-semibold ${STATUS_COLORS[d.status] ?? 'text-gray-400'}`}>
-                    {d.status.replace(/_/g, ' ')}
-                  </span>
-                  <span className="text-gray-600 text-xs">{expanded === d.id ? '▲' : '▼'}</span>
-                </div>
-              </button>
-
-              {expanded === d.id && (
-                <div className="border-t border-white/5 px-4 pb-4 space-y-3">
-                  {/* Finance Application */}
-                  {d.financeApplication && (
-                    <div className="mt-3">
-                      <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Finance Application</p>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-400">Status</span>
-                        <span className={`font-medium ${d.financeApplication.status === 'APPROVED' ? 'text-green-400' : d.financeApplication.status === 'REJECTED' ? 'text-red-400' : 'text-amber-400'}`}>
-                          {d.financeApplication.status.replace(/_/g, ' ')}
-                        </span>
-                      </div>
-                      {d.financeApplication.bankApproval && (
-                        <div className="mt-2 rounded-lg bg-green-500/5 border border-green-500/20 p-3">
-                          <p className="text-xs text-green-400 font-medium mb-1">Bank Approved</p>
-                          <p className="text-white text-sm">{fmt(Number(d.financeApplication.bankApproval.approvedAmount))}</p>
-                          <p className="text-xs text-gray-500">Ref: {d.financeApplication.bankApproval.approvalReferenceNumber}</p>
-                          <p className="text-xs text-gray-500">{new Date(d.financeApplication.bankApproval.approvalDate).toLocaleDateString('en-EG')}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Installment Plan */}
-                  {d.installmentPlan && (
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide">Installment Plan</p>
-                      <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                        <div><span className="text-gray-500">Principal</span> <span className="text-white ml-1">{fmt(Number(d.installmentPlan.principalAmount))}</span></div>
-                        <div><span className="text-gray-500">Rate</span> <span className="text-white ml-1">{Number(d.installmentPlan.interestRate)}% / yr</span></div>
-                        <div><span className="text-gray-500">Duration</span> <span className="text-white ml-1">{d.installmentPlan.durationMonths} months</span></div>
-                        <div><span className="text-gray-500">Status</span> <span className={`ml-1 ${d.installmentPlan.status === 'ACTIVE' ? 'text-blue-400' : 'text-gray-400'}`}>{d.installmentPlan.status}</span></div>
-                      </div>
-                      {d.installmentPlan.installments.length > 0 && (
-                        <div>
-                          <p className="text-xs text-gray-600 mb-1">Next installments:</p>
-                          {d.installmentPlan.installments.map((line, i) => (
-                            <div key={i} className="flex justify-between text-xs py-1 border-b border-white/5 last:border-0">
-                              <span className="text-gray-400">{new Date(line.dueDate).toLocaleDateString('en-EG')}</span>
-                              <span className={line.status === 'PAID' ? 'text-green-400' : line.status === 'OVERDUE' ? 'text-red-400' : 'text-white'}>
-                                {fmt(Number(line.totalDue))} · {line.status}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', padding: '0.2rem 0.6rem',
+      borderRadius: 99, fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.04em',
+      background: `${color ?? 'var(--primary)'}18`, color: color ?? 'var(--primary)',
+      textTransform: 'uppercase',
+    }}>{label}</span>
   );
 }
 
-function AuthSection({ onLogin }: { onLogin: (user: { name: string; email: string }) => void }) {
-  const [tab, setTab] = useState<'login' | 'register'>('login');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+// ── Bank financing timeline ───────────────────────────────────────────────────
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(''); setLoading(true);
+function FinanceTimeline({ app, dealId, onDocUploaded }: {
+  app: any;
+  dealId: string;
+  onDocUploaded: () => void;
+}) {
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [dragDocType, setDragDocType] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const status: string = app.bankFinancingStatus ?? 'DOCUMENTS_PENDING';
+  const stepIdx = FINANCING_STEPS.findIndex(s => s.key === status);
+  const rejected = status === 'REJECTED';
+
+  async function uploadDoc(docType: string, file: File) {
+    setUploading(docType);
     try {
-      if (tab === 'login') {
-        const res = await apiFetch<{ accessToken: string; user: { name: string; email: string } }>('/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({ email, password }),
-        });
-        document.cookie = `customer_session=${res.accessToken}; path=/; max-age=${7 * 86400}`;
-        onLogin(res.user);
-      } else {
-        const res = await apiFetch<{ accessToken: string; user: { name: string; email: string } }>('/auth/customer/register', {
-          method: 'POST',
-          body: JSON.stringify({ name, email, password }),
-        });
-        document.cookie = `customer_session=${res.accessToken}; path=/; max-age=${7 * 86400}`;
-        onLogin(res.user);
-      }
+      // ponytail: upload to /upload first, then register doc
+      const fd = new FormData(); fd.append('file', file);
+      const up = await fetch(`${API}/upload`, { method: 'POST', headers: authHeaders() as HeadersInit, body: fd });
+      const { url } = await up.json();
+      await apiFetch(`/public/account/deals/${dealId}/documents`, {
+        method: 'POST',
+        body: JSON.stringify({ documentType: docType, fileUrl: url }),
+      });
+      onDocUploaded();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Error');
+      alert(e instanceof Error ? e.message : 'Upload failed');
     } finally {
-      setLoading(false);
+      setUploading(null);
     }
   }
 
   return (
-    <section className="rounded-2xl border border-white/5 bg-gray-900 p-6 max-w-sm mx-auto">
-      <div className="flex gap-1 mb-6 bg-gray-800 rounded-xl p-1">
-        {(['login', 'register'] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 py-1.5 text-sm rounded-lg font-medium transition ${tab === t ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-            {t === 'login' ? 'Sign In' : 'Create Account'}
-          </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Timeline */}
+      {!rejected && (
+        <div>
+          <p style={{ fontWeight: 700, color: 'var(--text-1)', marginBottom: '1rem' }}>Financing Progress</p>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {FINANCING_STEPS.map((step, i) => {
+              const done = i <= stepIdx;
+              const active = i === stepIdx;
+              return (
+                <div key={step.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
+                  {i > 0 && <div style={{ position: 'absolute', left: 0, top: 10, width: '50%', height: 2, background: done ? 'var(--success)' : 'var(--border)' }} />}
+                  {i < FINANCING_STEPS.length - 1 && <div style={{ position: 'absolute', right: 0, top: 10, width: '50%', height: 2, background: i < stepIdx ? 'var(--success)' : 'var(--border)' }} />}
+                  <div style={{
+                    width: 22, height: 22, borderRadius: '50%', zIndex: 1, position: 'relative',
+                    background: done ? 'var(--success)' : 'var(--surface)',
+                    border: `2px solid ${done ? 'var(--success)' : active ? 'var(--primary)' : 'var(--border)'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: done ? '#fff' : 'var(--text-3)', fontSize: '0.6875rem', fontWeight: 700,
+                  }}>{done ? '✓' : i + 1}</div>
+                  <p style={{ fontSize: '0.6875rem', color: done ? 'var(--success-fg)' : 'var(--text-3)', marginTop: '0.375rem', textAlign: 'center', lineHeight: 1.3 }}>
+                    {step.label}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Rejected banner */}
+      {rejected && (
+        <div style={{ background: 'var(--danger-light)', border: '1px solid var(--danger)', borderRadius: 8, padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--danger-fg)', marginBottom: '0.35rem' }}>Application Rejected</p>
+          {app.rejectionReason && <p style={{ fontSize: '0.875rem', color: 'var(--danger-fg)' }}>{app.rejectionReason}</p>}
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-3)', marginTop: '0.5rem' }}>Contact your sales rep to reapply or switch payment method.</p>
+        </div>
+      )}
+
+      {/* Approved info */}
+      {status === 'APPROVED' && app.bankApproval && (
+        <div style={{ background: 'var(--success-light)', border: '1px solid var(--success)', borderRadius: 8, padding: '1rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--success-fg)', marginBottom: '0.5rem' }}>Bank Approved</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.875rem' }}>
+            <div><p style={{ color: 'var(--text-3)' }}>Approved Amount</p><p style={{ fontWeight: 700, color: 'var(--text-1)' }}>{fmt(app.bankApproval.approvedAmount)}</p></div>
+            <div><p style={{ color: 'var(--text-3)' }}>Approval Date</p><p style={{ fontWeight: 700, color: 'var(--text-1)' }}>{fmtDate(app.bankApproval.approvalDate)}</p></div>
+            <div><p style={{ color: 'var(--text-3)' }}>Reference No.</p><p style={{ fontWeight: 700, color: 'var(--text-1)' }}>{app.bankApproval.approvalReferenceNumber}</p></div>
+          </div>
+        </div>
+      )}
+
+      {/* Document checklist */}
+      <div>
+        <p style={{ fontWeight: 700, color: 'var(--text-1)', marginBottom: '0.875rem' }}>Document Checklist</p>
+
+        {/* Drag-and-drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={async e => {
+            e.preventDefault(); setDragOver(false);
+            const file = e.dataTransfer.files[0];
+            if (file && dragDocType) uploadDoc(dragDocType, file);
+          }}
+          style={{
+            border: `2px dashed ${dragOver ? 'var(--primary)' : 'var(--border)'}`,
+            borderRadius: 8, padding: '1.25rem', textAlign: 'center', marginBottom: '1rem',
+            background: dragOver ? 'var(--primary-light)' : 'var(--surface)',
+            transition: 'all 0.15s',
+          }}
+        >
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-2)', marginBottom: '0.35rem' }}>
+            Drag & drop a file here
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <select
+              value={dragDocType}
+              onChange={e => setDragDocType(e.target.value)}
+              style={{ fontSize: '0.8125rem', padding: '0.3rem 0.5rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-1)' }}
+            >
+              <option value="">Select document type</option>
+              {DOC_TYPES.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Per-type upload rows */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {DOC_TYPES.map(dt => {
+            const doc = app.requiredDocuments?.find((d: any) => d.documentType === dt.key);
+            const docStatus: string = doc?.status ?? 'PENDING';
+            const statusColor = docStatus === 'VERIFIED' ? 'var(--success-fg)' : docStatus === 'REJECTED' ? 'var(--danger-fg)' : docStatus === 'SUBMITTED' ? 'var(--primary)' : 'var(--text-3)';
+            return (
+              <div key={dt.key} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '0.625rem 0.875rem', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '1rem' }}>{docStatus === 'VERIFIED' ? '✅' : docStatus === 'REJECTED' ? '❌' : docStatus === 'SUBMITTED' ? '⏳' : '📄'}</span>
+                  <div>
+                    <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-1)' }}>{dt.label}</p>
+                    <p style={{ fontSize: '0.75rem', color: statusColor, textTransform: 'uppercase', fontWeight: 700 }}>{docStatus}</p>
+                  </div>
+                </div>
+                <label style={{ cursor: uploading === dt.key ? 'wait' : 'pointer' }}>
+                  <input
+                    ref={dt.key === DOC_TYPES[0].key ? fileRef : undefined}
+                    type="file" style={{ display: 'none' }}
+                    onChange={async e => { const f = e.target.files?.[0]; if (f) await uploadDoc(dt.key, f); }}
+                    disabled={!!uploading}
+                  />
+                  <span className="btn btn-outline btn-sm" style={{ pointerEvents: 'none' }}>
+                    {uploading === dt.key ? '…' : doc ? 'Replace' : 'Upload'}
+                  </span>
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Installment plan section ─────────────────────────────────────────────────
+
+function InstallmentSection({ plan }: { plan: any }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!plan) return <p style={{ color: 'var(--text-3)' }}>No installment plan on this deal.</p>;
+
+  const lines: any[] = plan.installments ?? [];
+  const paid = lines.filter((l: any) => l.status === 'PAID').length;
+  const overdue = lines.filter((l: any) => l.status === 'OVERDUE').length;
+  const nextDue = lines.find((l: any) => l.status === 'PENDING' || l.status === 'OVERDUE');
+  const totalPaid = lines.filter((l: any) => l.status === 'PAID').reduce((s: number, l: any) => s + Number(l.paidAmount ?? l.totalDue), 0);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {/* Summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
+        {[
+          { label: 'Total Payable', value: fmt(plan.totalPayable), color: 'var(--text-1)' },
+          { label: 'Paid So Far', value: fmt(totalPaid), color: 'var(--success-fg)' },
+          { label: 'Remaining', value: fmt(Number(plan.totalPayable) - totalPaid), color: 'var(--warning-fg)' },
+          { label: 'Installments', value: `${paid} / ${lines.length}`, color: 'var(--primary)' },
+        ].map(c => (
+          <div key={c.label} className="card" style={{ padding: '1rem', textAlign: 'center' }}>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.35rem' }}>{c.label}</p>
+            <p style={{ fontSize: '1.25rem', fontWeight: 800, color: c.color }}>{c.value}</p>
+          </div>
         ))}
       </div>
-      <form onSubmit={submit} className="space-y-3">
-        {tab === 'register' && (
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" required
-            className="w-full px-3 py-2 bg-gray-800 border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500" />
-        )}
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required
-          className="w-full px-3 py-2 bg-gray-800 border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500" />
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required
-          className="w-full px-3 py-2 bg-gray-800 border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500" />
-        {error && <p className="text-red-400 text-xs">{error}</p>}
-        <button type="submit" disabled={loading}
-          className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition">
-          {loading ? 'Please wait…' : tab === 'login' ? 'Sign In' : 'Create Account'}
-        </button>
-      </form>
-    </section>
+
+      {/* Next due / overdue alert */}
+      {overdue > 0 && (
+        <div style={{ background: 'var(--danger-light)', border: '1px solid var(--danger)', borderRadius: 8, padding: '0.875rem' }}>
+          <p style={{ fontWeight: 700, color: 'var(--danger-fg)' }}>⚠️ {overdue} overdue installment{overdue > 1 ? 's' : ''}</p>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', marginTop: '0.25rem' }}>Contact your sales rep to arrange payment.</p>
+        </div>
+      )}
+      {nextDue && overdue === 0 && (
+        <div style={{ background: 'var(--primary-light)', border: '1px solid var(--primary)', borderRadius: 8, padding: '0.875rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <p style={{ fontWeight: 700, color: 'var(--primary)' }}>Next Payment</p>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--text-2)', marginTop: '0.2rem' }}>{fmtDate(nextDue.dueDate)}</p>
+          </div>
+          <p style={{ fontWeight: 800, fontSize: '1.25rem', color: 'var(--primary)' }}>{fmt(nextDue.totalDue)}</p>
+        </div>
+      )}
+
+      {/* Collapsible full table */}
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="btn btn-ghost btn-sm"
+        style={{ alignSelf: 'flex-start' }}
+      >
+        {expanded ? '▲ Hide Schedule' : '▼ View Full Schedule'}
+      </button>
+
+      {expanded && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                {['#', 'Due Date', 'Principal', 'Interest', 'Total Due', 'Status'].map(h => (
+                  <th key={h} style={{ padding: '0.5rem 0.75rem', textAlign: 'left', color: 'var(--text-3)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l: any, i: number) => {
+                const color = STATUS_COLORS[l.status] ?? 'var(--text-3)';
+                return (
+                  <tr key={l.id ?? i} style={{ borderBottom: '1px solid var(--border)', background: l.status === 'OVERDUE' ? 'var(--danger-light)' : undefined }}>
+                    <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-3)' }}>{l.installmentNumber ?? i + 1}</td>
+                    <td style={{ padding: '0.5rem 0.75rem', whiteSpace: 'nowrap' }}>{fmtDate(l.dueDate)}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{fmt(l.principalPortion ?? 0)}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{fmt(l.interestPortion ?? 0)}</td>
+                    <td style={{ padding: '0.5rem 0.75rem', fontWeight: 700 }}>{fmt(l.totalDue)}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>
+                      <Badge label={l.status} color={color} />
+                      {l.paidDate && <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginLeft: 6 }}>{fmtDate(l.paidDate)}</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
-function AccountDashboard({ user, onLogout }: { user: { name: string; email: string }; onLogout: () => void }) {
+// ── Deal card ─────────────────────────────────────────────────────────────────
+
+function DealCard({ deal, onClick, active }: { deal: any; onClick: () => void; active: boolean }) {
+  const imgUrl = deal.vehicle?.images?.[0]?.url;
+  const nextInstallment = deal.installmentPlan?.installments?.[0];
+  const method = deal.purchaseMethod === 'CASH' ? 'Cash' : deal.purchaseMethod === 'DEALERSHIP_INSTALLMENT' ? 'Installment' : 'Bank Financing';
+  const invoice = deal.invoices?.[0];
+
   return (
-    <section className="rounded-2xl border border-white/5 bg-gray-900 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-lg font-bold text-white">{user.name}</h1>
-          <p className="text-gray-500 text-sm">{user.email}</p>
+    <button
+      onClick={onClick}
+      style={{
+        width: '100%', textAlign: 'left', background: active ? 'var(--primary-light)' : 'var(--surface)',
+        border: `1.5px solid ${active ? 'var(--primary)' : 'var(--border)'}`, borderRadius: 12,
+        overflow: 'hidden', cursor: 'pointer', transition: 'all 0.15s',
+      }}
+    >
+      {/* Vehicle image */}
+      <div style={{ height: 140, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+        {imgUrl
+          ? <img src={imgUrl} alt={deal.vehicle?.make} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <span style={{ fontSize: '3rem', color: 'var(--border-strong)' }}>🚗</span>
+        }
+        <div style={{ position: 'absolute', top: 8, right: 8 }}>
+          <Badge label={deal.status} color={STATUS_COLORS[deal.status]} />
         </div>
-        <button onClick={onLogout}
-          className="px-3 py-1.5 text-xs text-gray-400 border border-white/10 hover:border-white/20 hover:text-white rounded-lg transition">
-          Sign Out
-        </button>
       </div>
-      <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 text-sm text-blue-300">
-        To check your deal status, visit your nearest branch or contact us at{' '}
-        <a href="mailto:info@icaregypt.com" className="underline hover:text-white transition">info@icaregypt.com</a>.
+      <div style={{ padding: '1rem' }}>
+        <p style={{ fontWeight: 700, color: 'var(--text-1)', marginBottom: '0.25rem' }}>
+          {deal.vehicle?.year} {deal.vehicle?.make} {deal.vehicle?.model}
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem 1rem', fontSize: '0.8125rem', marginTop: '0.5rem' }}>
+          <div><span style={{ color: 'var(--text-3)' }}>Method</span><p style={{ fontWeight: 600, color: 'var(--text-1)' }}>{method}</p></div>
+          <div><span style={{ color: 'var(--text-3)' }}>Total</span><p style={{ fontWeight: 600, color: 'var(--text-1)' }}>{invoice ? fmt(invoice.amountTotal) : '—'}</p></div>
+          {nextInstallment && (
+            <div style={{ gridColumn: '1 / -1', marginTop: '0.25rem', padding: '0.5rem 0.625rem', background: nextInstallment.status === 'OVERDUE' ? 'var(--danger-light)' : 'var(--primary-light)', borderRadius: 6 }}>
+              <span style={{ fontSize: '0.75rem', color: nextInstallment.status === 'OVERDUE' ? 'var(--danger-fg)' : 'var(--primary)', fontWeight: 700 }}>
+                {nextInstallment.status === 'OVERDUE' ? '⚠️ OVERDUE' : 'Next Due'}: {fmt(nextInstallment.totalDue)} · {fmtDate(nextInstallment.dueDate)}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
-    </section>
+    </button>
   );
 }
+
+// ── Main account page ─────────────────────────────────────────────────────────
 
 function AccountContent() {
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  const router = useRouter();
+  const [nav, setNav] = useState<Nav>('deals');
+  const [deals, setDeals] = useState<any[]>([]);
+  const [activeDeal, setActiveDeal] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [favorites, setFavorites] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [profileForm, setProfileForm] = useState({ name: '', phone: '' });
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
 
-  useEffect(() => {
-    const token = document.cookie.split(';').find((c) => c.trim().startsWith('customer_session='))?.split('=')[1];
-    if (token) {
-      apiFetch<{ name: string; email: string }>('/auth/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      }).then((u) => setUser(u)).catch(() => {
-        document.cookie = 'customer_session=; path=/; max-age=0';
-      }).finally(() => setAuthChecked(true));
-    } else {
-      setAuthChecked(true);
+  const load = useCallback(async () => {
+    const token = localStorage.getItem('b2c_token');
+    if (!token) { router.push('/login'); return; }
+    try {
+      const [d, p, f] = await Promise.all([
+        apiFetch('/public/account/deals'),
+        apiFetch('/public/account/profile'),
+        apiFetch('/public/favorites'),
+      ]);
+      setDeals(d);
+      setProfile(p);
+      setProfileForm({ name: p.name ?? '', phone: p.phone ?? '' });
+      setFavorites(f);
+      if (d.length > 0) setActiveDeal(d[0]);
+    } catch {
+      router.push('/login');
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  }, [router]);
 
-  function logout() {
-    document.cookie = 'customer_session=; path=/; max-age=0';
-    setUser(null);
+  useEffect(() => { load(); }, [load]);
+
+  async function saveProfile() {
+    setSaving(true);
+    try {
+      const updated = await apiFetch('/public/account/profile', {
+        method: 'PATCH', body: JSON.stringify(profileForm),
+      });
+      setProfile(updated);
+      setSaveMsg('Saved!');
+      setTimeout(() => setSaveMsg(''), 2500);
+    } catch (e: unknown) {
+      setSaveMsg(e instanceof Error ? e.message : 'Error saving');
+    } finally {
+      setSaving(false);
+    }
   }
 
+  async function removeFav(vehicleId: string) {
+    await apiFetch(`/public/favorites/${vehicleId}`, { method: 'DELETE' });
+    setFavorites(f => f.filter((v: any) => v.vehicleId !== vehicleId));
+  }
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+        <Header />
+        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '6rem' }}>
+          <p style={{ color: 'var(--text-3)', fontSize: '1.125rem' }}>Loading your account…</p>
+        </div>
+      </div>
+    );
+  }
+
+  const NAV_ITEMS: { key: Nav; label: string; icon: string }[] = [
+    { key: 'deals', label: 'My Deals', icon: '🚗' },
+    { key: 'finance', label: 'Finance Status', icon: '🏦' },
+    { key: 'installments', label: 'Installments', icon: '📅' },
+    { key: 'profile', label: 'Profile', icon: '👤' },
+    { key: 'favorites', label: 'Saved Vehicles', icon: '❤️' },
+  ];
+
+  const bankDeal = deals.find((d: any) => d.purchaseMethod === 'BANK_FINANCING');
+  const installmentDeal = deals.find((d: any) => d.purchaseMethod === 'DEALERSHIP_INSTALLMENT');
+
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       <Header />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6" style={{ paddingTop: '2rem', paddingBottom: '4rem' }}>
 
-      <div className="max-w-3xl mx-auto px-4 py-10 space-y-10">
+        {/* Profile header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', marginBottom: '2rem' }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: '50%', background: 'var(--primary)', color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem', fontWeight: 700, flexShrink: 0,
+          }}>
+            {(profile?.name ?? 'U').slice(0, 2).toUpperCase()}
+          </div>
+          <div>
+            <h2 style={{ fontSize: '1.375rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: '0.2rem' }}>
+              {profile?.name ?? 'Customer'}
+            </h2>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-3)' }}>
+              {profile?.email} · Member since {profile?.createdAt ? fmtDate(profile.createdAt) : '—'}
+            </p>
+          </div>
+          <button
+            onClick={() => { localStorage.removeItem('b2c_token'); router.push('/login'); }}
+            className="btn btn-ghost btn-sm"
+            style={{ marginLeft: 'auto' }}
+          >
+            Sign Out
+          </button>
+        </div>
 
-        {authChecked && (
-          user
-            ? <AccountDashboard user={user} onLogout={logout} />
-            : <AuthSection onLogin={(u) => setUser(u)} />
-        )}
+        {/* Layout: sidebar + content */}
+        <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '1.5rem', alignItems: 'flex-start' }}>
 
-        {/* Deal Status Lookup */}
-        <DealStatusLookup />
+          {/* Sidebar nav */}
+          <div className="card" style={{ padding: '0.5rem', position: 'sticky', top: '1rem' }}>
+            {NAV_ITEMS.map(item => (
+              <button
+                key={item.key}
+                onClick={() => setNav(item.key)}
+                style={{
+                  width: '100%', textAlign: 'left', padding: '0.75rem 1rem', borderRadius: 8,
+                  background: nav === item.key ? 'var(--primary)' : 'transparent',
+                  color: nav === item.key ? '#fff' : 'var(--text-2)',
+                  border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem',
+                  display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.2rem',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <span>{item.icon}</span> {item.label}
+              </button>
+            ))}
+          </div>
 
-        {/* How It Works */}
-        <section>
-          <h2 className="text-lg font-bold text-white mb-5">How It Works</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {HOW_IT_WORKS.map((s) => (
-              <div key={s.step} className="rounded-2xl border border-white/5 bg-gray-900 p-5">
-                <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 mb-4">
-                  {s.icon}
-                </div>
-                <p className="text-xs text-blue-400 font-medium mb-1">Step {s.step}</p>
-                <p className="text-sm font-semibold text-white mb-2">{s.title}</p>
-                <p className="text-xs text-gray-500 leading-relaxed">{s.desc}</p>
+          {/* Content area */}
+          <div>
+
+            {/* ── My Deals ── */}
+            {nav === 'deals' && (
+              <div>
+                <h3 style={{ fontWeight: 800, color: 'var(--text-1)', fontSize: '1.125rem', marginBottom: '1.25rem' }}>My Deals</h3>
+                {deals.length === 0 ? (
+                  <div className="card" style={{ padding: '3rem', textAlign: 'center' }}>
+                    <p style={{ fontSize: '1.5rem', marginBottom: '0.75rem' }}>🚗</p>
+                    <p style={{ color: 'var(--text-3)' }}>No deals yet.</p>
+                    <Link href="/vehicles" className="btn btn-primary btn-sm" style={{ marginTop: '1rem', display: 'inline-flex', textDecoration: 'none' }}>
+                      Browse Inventory
+                    </Link>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                    {deals.map((deal: any) => (
+                      <DealCard
+                        key={deal.id}
+                        deal={deal}
+                        active={activeDeal?.id === deal.id}
+                        onClick={() => { setActiveDeal(deal); }}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-        </section>
+            )}
 
-        {/* Contact */}
-        <section>
-          <h2 className="text-lg font-bold text-white mb-5">Get in Touch</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {CONTACTS.map((c) => (
-              <a key={c.label} href={c.href} target={c.href.startsWith('http') ? '_blank' : undefined}
-                rel="noopener noreferrer"
-                className="rounded-2xl border border-white/5 bg-gray-900 hover:border-white/20 p-5 flex items-start gap-3 transition group">
-                <div className="mt-0.5 text-blue-400 group-hover:text-blue-300 transition shrink-0">
-                  {c.icon}
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 mb-0.5">{c.label}</p>
-                  <p className="text-sm text-white font-medium">{c.value}</p>
-                </div>
-              </a>
-            ))}
-          </div>
-        </section>
+            {/* ── Finance Status ── */}
+            {nav === 'finance' && (
+              <div>
+                <h3 style={{ fontWeight: 800, color: 'var(--text-1)', fontSize: '1.125rem', marginBottom: '1.25rem' }}>Finance Application Status</h3>
+                {!bankDeal ? (
+                  <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
+                    <p style={{ color: 'var(--text-3)' }}>No bank financing application found.</p>
+                  </div>
+                ) : (
+                  <div className="card" style={{ padding: '1.5rem' }}>
+                    <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <p style={{ fontWeight: 700, color: 'var(--text-1)' }}>
+                        {bankDeal.vehicle?.year} {bankDeal.vehicle?.make} {bankDeal.vehicle?.model}
+                      </p>
+                      <Badge label={bankDeal.financeApplication?.bankFinancingStatus ?? '—'} color="var(--primary)" />
+                    </div>
+                    <FinanceTimeline
+                      app={bankDeal.financeApplication}
+                      dealId={bankDeal.id}
+                      onDocUploaded={load}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
-        <div className="text-center pt-4 pb-2">
-          <Link href="/vehicles" className="text-blue-400 hover:text-blue-300 text-sm transition">
-            Browse our inventory →
-          </Link>
+            {/* ── Installments ── */}
+            {nav === 'installments' && (
+              <div>
+                <h3 style={{ fontWeight: 800, color: 'var(--text-1)', fontSize: '1.125rem', marginBottom: '1.25rem' }}>Installment Plan</h3>
+                {!installmentDeal ? (
+                  <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
+                    <p style={{ color: 'var(--text-3)' }}>No installment plan found.</p>
+                  </div>
+                ) : (
+                  <div className="card" style={{ padding: '1.5rem' }}>
+                    <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <p style={{ fontWeight: 700, color: 'var(--text-1)' }}>
+                        {installmentDeal.vehicle?.year} {installmentDeal.vehicle?.make} {installmentDeal.vehicle?.model}
+                      </p>
+                      <Badge
+                        label={installmentDeal.installmentPlan?.status ?? '—'}
+                        color={STATUS_COLORS[installmentDeal.installmentPlan?.status] ?? 'var(--primary)'}
+                      />
+                    </div>
+                    <InstallmentSection plan={installmentDeal.installmentPlan} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Profile ── */}
+            {nav === 'profile' && (
+              <div>
+                <h3 style={{ fontWeight: 800, color: 'var(--text-1)', fontSize: '1.125rem', marginBottom: '1.25rem' }}>My Profile</h3>
+                <div className="card" style={{ padding: '1.5rem', maxWidth: 480 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {[
+                      { label: 'Full Name', key: 'name', type: 'text' },
+                      { label: 'Phone', key: 'phone', type: 'tel' },
+                    ].map(f => (
+                      <div key={f.key}>
+                        <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.375rem' }}>
+                          {f.label}
+                        </label>
+                        <input
+                          type={f.type}
+                          value={profileForm[f.key as keyof typeof profileForm]}
+                          onChange={e => setProfileForm(p => ({ ...p, [f.key]: e.target.value }))}
+                          style={{ width: '100%', padding: '0.625rem 0.875rem', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-1)', fontSize: '0.9375rem', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                    ))}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.375rem' }}>Email</label>
+                      <input
+                        value={profile?.email ?? ''}
+                        disabled
+                        style={{ width: '100%', padding: '0.625rem 0.875rem', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-3)', fontSize: '0.9375rem', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <button
+                        onClick={saveProfile}
+                        disabled={saving}
+                        className="btn btn-primary btn-sm"
+                      >
+                        {saving ? 'Saving…' : 'Save Changes'}
+                      </button>
+                      {saveMsg && <p style={{ fontSize: '0.875rem', color: saveMsg === 'Saved!' ? 'var(--success-fg)' : 'var(--danger-fg)', fontWeight: 600 }}>{saveMsg}</p>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Favorites ── */}
+            {nav === 'favorites' && (
+              <div>
+                <h3 style={{ fontWeight: 800, color: 'var(--text-1)', fontSize: '1.125rem', marginBottom: '1.25rem' }}>Saved Vehicles</h3>
+                {favorites.length === 0 ? (
+                  <div className="card" style={{ padding: '3rem', textAlign: 'center' }}>
+                    <p style={{ fontSize: '1.5rem', marginBottom: '0.75rem' }}>❤️</p>
+                    <p style={{ color: 'var(--text-3)' }}>No saved vehicles yet.</p>
+                    <Link href="/vehicles" className="btn btn-primary btn-sm" style={{ marginTop: '1rem', display: 'inline-flex', textDecoration: 'none' }}>
+                      Browse Inventory
+                    </Link>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '1rem' }}>
+                    {favorites.map((fav: any) => {
+                      const v = fav.vehicle;
+                      if (!v) return null;
+                      return (
+                        <div key={fav.vehicleId} className="card" style={{ overflow: 'hidden' }}>
+                          <Link href={`/vehicles/${v.id}`} style={{ display: 'block', textDecoration: 'none' }}>
+                            <div style={{ height: 120, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {v.images?.[0]?.url
+                                ? <img src={v.images[0].url} alt={v.make} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <span style={{ fontSize: '2.5rem', color: 'var(--border-strong)' }}>🚗</span>
+                              }
+                            </div>
+                            <div style={{ padding: '0.875rem' }}>
+                              <p style={{ fontWeight: 700, color: 'var(--text-1)', marginBottom: '0.2rem' }}>{v.make} {v.model} {v.year}</p>
+                              <p style={{ fontSize: '1.0625rem', fontWeight: 800, color: 'var(--primary)', marginBottom: '0.5rem' }}>{fmt(v.price ?? v.salePrice ?? 0)}</p>
+                            </div>
+                          </Link>
+                          <div style={{ padding: '0 0.875rem 0.875rem' }}>
+                            <button
+                              onClick={() => removeFav(fav.vehicleId)}
+                              className="btn btn-ghost btn-sm"
+                              style={{ width: '100%', color: 'var(--danger-fg)' }}
+                            >
+                              ✕ Remove
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
         </div>
       </div>
     </div>
@@ -383,7 +676,7 @@ function AccountContent() {
 
 export default function AccountPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-950"><Header /></div>}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: 'var(--bg)' }}><Header /></div>}>
       <AccountContent />
     </Suspense>
   );
