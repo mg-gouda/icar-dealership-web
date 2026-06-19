@@ -17,7 +17,15 @@ interface Vehicle {
 }
 
 const MAKES = ['Toyota', 'Hyundai', 'Kia', 'Nissan', 'Chevrolet', 'BMW', 'Mercedes-Benz', 'Honda', 'Ford', 'Jeep'].map((m) => ({ value: m, label: m }));
-const BODY_TYPES = ['Sedan', 'SUV', 'Hatchback', 'Pickup', 'Van', 'Coupe', 'Wagon'].map((b) => ({ value: b, label: b }));
+const BODY_TYPES = [
+  { value: 'SEDAN', label: 'Sedan' },
+  { value: 'SUV', label: 'SUV' },
+  { value: 'HATCHBACK', label: 'Hatchback' },
+  { value: 'TRUCK', label: 'Pickup / Truck' },
+  { value: 'VAN', label: 'Van' },
+  { value: 'COUPE', label: 'Coupe' },
+  { value: 'CONVERTIBLE', label: 'Convertible' },
+];
 const SORT_OPTIONS = [
   { value: 'price_asc', label: 'Price: Low to High' },
   { value: 'price_desc', label: 'Price: High to Low' },
@@ -42,6 +50,10 @@ export default function VehiclesPage() {
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
 
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+
   // Compare selection
   const [compareIds, setCompareIds] = useState<string[]>([]);
 
@@ -56,11 +68,11 @@ export default function VehiclesPage() {
     setSavedSet(new Set(ids));
   }, []);
 
-  useEffect(() => {
+  function fetchVehicles(p: number) {
     setLoading(true);
     const qs = new URLSearchParams({
-      status: 'AVAILABLE',
-      limit: '48',
+      limit: '20',
+      page: String(p),
       ...(make && { make }),
       ...(bodyType && { bodyType }),
       ...(condition && { condition }),
@@ -68,11 +80,28 @@ export default function VehiclesPage() {
       ...(minPrice && { minPrice }),
       ...(maxPrice && { maxPrice }),
     });
-    apiFetch<{ data: Vehicle[] }>(`/public/vehicles?${qs}`)
-      .then((res) => { setVehicles(res.data ?? []); setError(''); })
+    apiFetch<{ data: Vehicle[]; meta: { total: number; totalPages: number } }>(`/public/vehicles?${qs}`)
+      .then((res) => {
+        setVehicles(res.data ?? []);
+        setTotal(res.meta?.total ?? 0);
+        setTotalPages(res.meta?.totalPages ?? 1);
+        setError('');
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load vehicles'))
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    setPage(1);
+    fetchVehicles(1);
+    // ponytail: deps on filter values, not fetchVehicles fn
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, make, bodyType, condition, minPrice, maxPrice]);
+
+  useEffect(() => {
+    if (page > 1) fetchVehicles(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   const sorted = [...vehicles].sort((a, b) => {
     if (sort === 'price_asc') return a.price - b.price;
@@ -107,7 +136,7 @@ export default function VehiclesPage() {
       <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white mb-1">Browse Inventory</h1>
-          <p className="text-gray-500 text-sm">{loading ? '…' : `${sorted.length} vehicles available`}</p>
+          <p className="text-gray-500 text-sm">{loading ? '…' : `${total} vehicles available`}</p>
         </div>
 
         {/* Filters */}
@@ -139,11 +168,20 @@ export default function VehiclesPage() {
             placeholder="Sort by" className="w-48" />
         </div>
 
-        {error && <p className="text-red-400 text-sm mb-6">{error}</p>}
+        {error && (
+          <div className="mb-6 flex items-center gap-4">
+            <p className="text-red-400 text-sm">{error}</p>
+            <button
+              onClick={() => fetchVehicles(page)}
+              className="text-xs px-3 py-1.5 border border-white/10 hover:border-white/30 text-gray-400 hover:text-white rounded-lg transition">
+              Retry
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
+            {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="rounded-2xl bg-gray-900 border border-white/5 h-64 animate-pulse" />
             ))}
           </div>
@@ -223,6 +261,27 @@ export default function VehiclesPage() {
                 No vehicles match your filters.
               </div>
             )}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {!loading && totalPages > 1 && (
+          <div className="mt-8 flex items-center justify-center gap-4">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-4 py-2 text-sm border border-white/10 rounded-xl text-gray-400 hover:text-white hover:border-white/30 disabled:opacity-30 disabled:cursor-not-allowed transition">
+              ← Prev
+            </button>
+            <span className="text-sm text-gray-500">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-4 py-2 text-sm border border-white/10 rounded-xl text-gray-400 hover:text-white hover:border-white/30 disabled:opacity-30 disabled:cursor-not-allowed transition">
+              Next →
+            </button>
           </div>
         )}
       </div>

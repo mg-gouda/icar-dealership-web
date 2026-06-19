@@ -78,6 +78,65 @@ const CONTACTS = [
   },
 ];
 
+const STATUS_COLORS: Record<string, string> = {
+  DRAFT: 'text-gray-400', PENDING_FINANCE: 'text-amber-400',
+  APPROVED: 'text-blue-400', FINALIZED: 'text-green-400', CANCELLED: 'text-red-400',
+};
+
+function DealStatusLookup() {
+  const [email, setEmail] = useState('');
+  const [deals, setDeals] = useState<Array<{ id: string; status: string; purchaseMethod: string; createdAt: string; vehicle?: { make: string; model: string; year: number }; location?: { name: string; phone: string } }> | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function lookup(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ deals: typeof deals }>(`/public/deal-status?email=${encodeURIComponent(email)}`);
+      setDeals(res.deals);
+    } catch (e: unknown) {
+      setDeals([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-white/5 bg-gray-900 p-6">
+      <h2 className="text-lg font-bold text-white mb-1">Check Deal Status</h2>
+      <p className="text-gray-500 text-sm mb-4">Enter your email to look up your deal progress.</p>
+      <form onSubmit={lookup} className="flex gap-2 mb-4">
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your@email.com" required
+          className="flex-1 px-3 py-2 bg-gray-800 border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        <button type="submit" disabled={loading || !email}
+          className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition">
+          {loading ? '…' : 'Look Up'}
+        </button>
+      </form>
+      {deals !== null && deals.length === 0 && (
+        <p className="text-gray-500 text-sm">No deals found for this email. Contact us if you need help.</p>
+      )}
+      {deals && deals.length > 0 && (
+        <div className="space-y-3">
+          {deals.map((d) => (
+            <div key={d.id} className="rounded-xl border border-white/5 bg-gray-800 p-4 flex items-center justify-between">
+              <div>
+                <p className="text-white text-sm font-medium">
+                  {d.vehicle ? `${d.vehicle.year} ${d.vehicle.make} ${d.vehicle.model}` : `Deal #${d.id.slice(-8)}`}
+                </p>
+                <p className="text-gray-500 text-xs mt-0.5">{d.location?.name} · {d.purchaseMethod.replace(/_/g, ' ')}</p>
+              </div>
+              <span className={`text-sm font-semibold ${STATUS_COLORS[d.status] ?? 'text-gray-400'}`}>
+                {d.status.replace(/_/g, ' ')}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AuthSection({ onLogin }: { onLogin: (user: { name: string; email: string }) => void }) {
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
@@ -195,6 +254,9 @@ function AccountContent() {
             ? <AccountDashboard user={user} onLogout={logout} />
             : <AuthSection onLogin={(u) => setUser(u)} />
         )}
+
+        {/* Deal Status Lookup */}
+        <DealStatusLookup />
 
         {/* How It Works */}
         <section>
