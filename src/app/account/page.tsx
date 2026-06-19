@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { apiFetch } from '../../lib/api';
 import Header from '../../components/Header';
 
 const HOW_IT_WORKS = [
@@ -77,15 +78,111 @@ const CONTACTS = [
   },
 ];
 
-function AccountContent() {
-  const searchParams = useSearchParams();
-  const dealRef = searchParams.get('dealRef');
+function AuthSection({ onLogin }: { onLogin: (user: { name: string; email: string }) => void }) {
+  const [tab, setTab] = useState<'login' | 'register'>('login');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [looked, setLooked] = useState(false);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(''); setLoading(true);
+    try {
+      if (tab === 'login') {
+        const res = await apiFetch<{ accessToken: string; user: { name: string; email: string } }>('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
+        });
+        document.cookie = `customer_session=${res.accessToken}; path=/; max-age=${7 * 86400}`;
+        onLogin(res.user);
+      } else {
+        const res = await apiFetch<{ accessToken: string; user: { name: string; email: string } }>('/auth/customer/register', {
+          method: 'POST',
+          body: JSON.stringify({ name, email, password }),
+        });
+        document.cookie = `customer_session=${res.accessToken}; path=/; max-age=${7 * 86400}`;
+        onLogin(res.user);
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-white/5 bg-gray-900 p-6 max-w-sm mx-auto">
+      <div className="flex gap-1 mb-6 bg-gray-800 rounded-xl p-1">
+        {(['login', 'register'] as const).map((t) => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 py-1.5 text-sm rounded-lg font-medium transition ${tab === t ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+            {t === 'login' ? 'Sign In' : 'Create Account'}
+          </button>
+        ))}
+      </div>
+      <form onSubmit={submit} className="space-y-3">
+        {tab === 'register' && (
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" required
+            className="w-full px-3 py-2 bg-gray-800 border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        )}
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required
+          className="w-full px-3 py-2 bg-gray-800 border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required
+          className="w-full px-3 py-2 bg-gray-800 border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        {error && <p className="text-red-400 text-xs">{error}</p>}
+        <button type="submit" disabled={loading}
+          className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition">
+          {loading ? 'Please wait…' : tab === 'login' ? 'Sign In' : 'Create Account'}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function AccountDashboard({ user, onLogout }: { user: { name: string; email: string }; onLogout: () => void }) {
+  return (
+    <section className="rounded-2xl border border-white/5 bg-gray-900 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-lg font-bold text-white">{user.name}</h1>
+          <p className="text-gray-500 text-sm">{user.email}</p>
+        </div>
+        <button onClick={onLogout}
+          className="px-3 py-1.5 text-xs text-gray-400 border border-white/10 hover:border-white/20 hover:text-white rounded-lg transition">
+          Sign Out
+        </button>
+      </div>
+      <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 text-sm text-blue-300">
+        To check your deal status, visit your nearest branch or contact us at{' '}
+        <a href="mailto:info@icaregypt.com" className="underline hover:text-white transition">info@icaregypt.com</a>.
+      </div>
+    </section>
+  );
+}
+
+function AccountContent() {
+  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    if (dealRef) setLooked(true);
-  }, [dealRef]);
+    const token = document.cookie.split(';').find((c) => c.trim().startsWith('customer_session='))?.split('=')[1];
+    if (token) {
+      apiFetch<{ name: string; email: string }>('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((u) => setUser(u)).catch(() => {
+        document.cookie = 'customer_session=; path=/; max-age=0';
+      }).finally(() => setAuthChecked(true));
+    } else {
+      setAuthChecked(true);
+    }
+  }, []);
+
+  function logout() {
+    document.cookie = 'customer_session=; path=/; max-age=0';
+    setUser(null);
+  }
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -93,37 +190,11 @@ function AccountContent() {
 
       <div className="max-w-3xl mx-auto px-4 py-10 space-y-10">
 
-        {/* Deal Status Lookup */}
-        <section className="rounded-2xl border border-white/5 bg-gray-900 p-6">
-          <h1 className="text-xl font-bold text-white mb-1">Deal Status</h1>
-          <p className="text-gray-500 text-sm mb-5">Enter your email to look up your deal status.</p>
-
-          <div className="flex gap-2">
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your@email.com"
-              className="flex-1 px-3 py-2 bg-gray-800 border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
-            />
-            <button
-              onClick={() => setLooked(true)}
-              disabled={!email}
-              className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition">
-              Look Up
-            </button>
-          </div>
-
-          {(looked || dealRef) && (
-            <div className="mt-4 rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 text-sm text-blue-300">
-              Please visit your nearest branch or call us to check your deal status.
-              Alternatively, contact us at{' '}
-              <a href="mailto:info@icaregypt.com" className="underline hover:text-white transition">
-                info@icaregypt.com
-              </a>.
-            </div>
-          )}
-        </section>
+        {authChecked && (
+          user
+            ? <AccountDashboard user={user} onLogout={logout} />
+            : <AuthSection onLogin={(u) => setUser(u)} />
+        )}
 
         {/* How It Works */}
         <section>
